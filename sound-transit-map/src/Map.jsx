@@ -17,7 +17,29 @@ export default function Map() {
   const stopsRef = useRef(null);
 
   // -----------------------------
-  // 🚨 LIVE ALERTS (NOW REFRESHING)
+  // 🔍 HELPERS
+  // -----------------------------
+  const getRouteName = (routeId) => {
+    const f = shapesRef.current?.features.find(
+      (x) => String(x.properties.route_id) === String(routeId)
+    );
+    return (
+      f?.properties?.route_short_name ||
+      f?.properties?.route_long_name ||
+      routeId ||
+      "Unknown"
+    );
+  };
+
+  const getStopName = (stopId) => {
+    const f = stopsRef.current?.features.find(
+      (x) => String(x.properties.stop_id) === String(stopId)
+    );
+    return f?.properties?.stop_name || stopId;
+  };
+
+  // -----------------------------
+  // 🚨 LIVE ALERTS
   // -----------------------------
   useEffect(() => {
     const fetchAlerts = () => {
@@ -58,7 +80,7 @@ export default function Map() {
 
           stopSeverityMap.current = severityMap;
 
-          // 🔥 IMPORTANT: update map layer if it already exists
+          // 🔄 FORCE MAP UPDATE
           if (map.current?.getSource("stops")) {
             map.current.getSource("stops").setData(stopsRef.current);
           }
@@ -66,10 +88,8 @@ export default function Map() {
         .catch(console.error);
     };
 
-    fetchAlerts(); // initial load
-
-    const interval = setInterval(fetchAlerts, 30000); // 🔄 LIVE UPDATES
-
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -136,7 +156,7 @@ export default function Map() {
         },
       });
 
-      // 🚆 LINE HOVER POPUP
+      // 🚆 LINE HOVER
       const linePopup = new mapboxgl.Popup({
         closeButton: false,
         closeOnClick: false,
@@ -146,14 +166,17 @@ export default function Map() {
         map.current.getCanvas().style.cursor = "pointer";
 
         const props = e.features[0].properties;
-        const routeId = props.route_id || props.shape_id;
+
+        const routeName =
+          props.route_short_name ||
+          props.route_long_name ||
+          props.route_id;
 
         linePopup
           .setLngLat(e.lngLat)
           .setHTML(`
             <strong>🚆 Route</strong><br/>
-            ID: ${routeId}<br/>
-            ${props.route_name ? `Name: ${props.route_name}` : ""}
+            ${routeName}
           `)
           .addTo(map.current);
       });
@@ -227,7 +250,7 @@ export default function Map() {
             const routes = [
               ...new Set(
                 alert?.informed_entity
-                  ?.map((e) => e.route_id)
+                  ?.map((e) => getRouteName(e.route_id))
                   .filter(Boolean)
               ),
             ].join(", ");
@@ -235,20 +258,13 @@ export default function Map() {
             const stops = [
               ...new Set(
                 alert?.informed_entity
-                  ?.map((e) => e.stop_id)
+                  ?.map((e) => getStopName(e.stop_id))
                   .filter(Boolean)
               ),
             ].join(", ");
 
             return (
-              <div
-                key={i}
-                style={{
-                  marginTop: "10px",
-                  borderTop: "1px solid #444",
-                  paddingTop: "8px",
-                }}
-              >
+              <div key={i} style={{ marginTop: "10px" }}>
                 <div>⚠️ {text}</div>
                 <div style={{ opacity: 0.7 }}>Routes: {routes}</div>
                 <div style={{ opacity: 0.7 }}>Stops: {stops}</div>
