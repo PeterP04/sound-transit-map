@@ -10,10 +10,14 @@ export default function TransitMap() {
 
   const [alerts, setAlerts] = useState([]);
   const [stops, setStops] = useState([]);
-  const [routes, setRoutes] = useState([]);
 
   // -----------------------------
-  // FETCH ALERTS (auto-refresh)
+  // HELP: normalize IDs (VERY IMPORTANT)
+  // -----------------------------
+  const normalizeId = (id) => String(id).replace(/\s/g, "");
+
+  // -----------------------------
+  // LIVE ALERT FETCH (FIXED)
   // -----------------------------
   useEffect(() => {
     const fetchAlerts = async () => {
@@ -21,25 +25,34 @@ export default function TransitMap() {
         const res = await fetch("YOUR_ALERTS_URL_HERE");
         const data = await res.json();
 
-        // prevent duplicates
-        const unique = Array.from(
-          new Map(data.map(a => [a.id, a])).values()
-        );
-
-        setAlerts(unique);
+        setAlerts(data);
       } catch (err) {
         console.error("Alert fetch error:", err);
       }
     };
 
-    fetchAlerts();
-    const interval = setInterval(fetchAlerts, 30000);
+    fetchAlerts(); // initial load
+
+    const interval = setInterval(fetchAlerts, 30000); // live updates
 
     return () => clearInterval(interval);
   }, []);
 
   // -----------------------------
-  // INIT MAP (ONCE)
+  // LOAD STOPS ONCE
+  // -----------------------------
+  useEffect(() => {
+    const loadStops = async () => {
+      const res = await fetch("/stops.geojson");
+      const data = await res.json();
+      setStops(data.features);
+    };
+
+    loadStops();
+  }, []);
+
+  // -----------------------------
+  // INIT MAP
   // -----------------------------
   useEffect(() => {
     if (map.current) return;
@@ -52,12 +65,12 @@ export default function TransitMap() {
     });
 
     map.current.on("load", () => {
-      // -----------------------------
-      // LOAD STOPS (GeoJSON)
-      // -----------------------------
       map.current.addSource("stops", {
         type: "geojson",
-        data: "/stops.geojson",
+        data: {
+          type: "FeatureCollection",
+          features: [],
+        },
       });
 
       map.current.addLayer({
@@ -69,83 +82,54 @@ export default function TransitMap() {
           "circle-color": "#3388ff",
         },
       });
-
-      // -----------------------------
-      // LOAD ROUTES (NO ALERT COLORS)
-      // -----------------------------
-      map.current.addSource("routes", {
-        type: "geojson",
-        data: "/shapes.geojson",
-      });
-
-      map.current.addLayer({
-        id: "routes-layer",
-        type: "line",
-        source: "routes",
-        paint: {
-          "line-color": "#888",
-          "line-width": 3,
-        },
-      });
-
-      // -----------------------------
-      // ROUTE HOVER POPUP
-      // -----------------------------
-      const popup = new mapboxgl.Popup({
-        closeButton: false,
-        closeOnClick: false,
-      });
-
-      map.current.on("mouseenter", "routes-layer", (e) => {
-        map.current.getCanvas().style.cursor = "pointer";
-
-        const props = e.features[0].properties;
-
-        popup
-          .setLngLat(e.lngLat)
-          .setHTML(`
-            <div>
-              <strong>Route:</strong> ${props.route_id || "Unknown"}<br/>
-              <strong>Service:</strong> ${props.service || "N/A"}
-            </div>
-          `)
-          .addTo(map.current);
-      });
-
-      map.current.on("mouseleave", "routes-layer", () => {
-        map.current.getCanvas().style.cursor = "";
-        popup.remove();
-      });
     });
   }, []);
 
   // -----------------------------
-  // UPDATE STOP COLORS WHEN ALERTS CHANGE
+  // APPLY ALERTS → STOPS (FIXED LOGIC)
   // -----------------------------
   useEffect(() => {
-    if (!map.current) return;
+    if (!map.current || stops.length === 0) return;
 
-    const alertStopIds = new Set(
-      alerts.flatMap(a => a.stop_ids || [])
-    );
+    // 🔥 SAFE ALERT PARSING (handles different GTFS formats)
+    const alertStopIds = new Set();
 
+    alerts.forEach((alert) => {
+      // TRY MULTIPLE COMMON FIELDS
+      const ids =
+        alert.stop_ids ||
+        alert.stops ||
+        alert.informedEntity?.map(e => e.stopId) ||
+        [];
+
+      ids.forEach((id) => {
+        if (id) alertStopIds.add(normalizeId(id));
+      });
+    });
+
+    // rebuild GeoJSON
     const updatedStops = {
       type: "FeatureCollection",
-      features: stops.map(stop => ({
-        ...stop,
-        properties: {
-          ...stop.properties,
-          hasAlert: alertStopIds.has(stop.properties.stop_id),
-        },
-      })),
+      features: stops.map((stop) => {
+        const stopId = normalizeId(stop.properties.stop_id);
+
+        return {
+          ...stop,
+          properties: {
+            ...stop.properties,
+            hasAlert: alertStopIds.has(stopId),
+          },
+        };
+      }),
     };
 
     const source = map.current.getSource("stops");
+
     if (source) {
       source.setData(updatedStops);
     }
 
-    // update paint only once source exists
+    // update styling
     if (map.current.getLayer("stops-layer")) {
       map.current.setPaintProperty(
         "stops-layer",
@@ -153,42 +137,23 @@ export default function TransitMap() {
         [
           "case",
           ["boolean", ["get", "hasAlert"], false],
-          "#ff3b30", // red if alert
-          "#3388ff", // default blue
+          "#ff3b30",
+          "#3388ff",
         ]
       );
     }
   }, [alerts, stops]);
 
   // -----------------------------
-  // LOAD GTFS STOPS (ONCE)
-  // -----------------------------
-  useEffect(() => {
-    const loadStops = async () => {
-      try {
-        const res = await fetch("/stops.geojson");
-        const data = await res.json();
-        setStops(data.features);
-      } catch (err) {
-        console.error("Stop load error:", err);
-      }
-    };
-
-    loadStops();
-  }, []);
-
-  // -----------------------------
   // UI
   // -----------------------------
   return (
     <div style={{ display: "flex" }}>
-      {/* MAP */}
       <div
         ref={mapContainer}
         style={{ width: "75%", height: "100vh" }}
       />
 
-      {/* ALERT SIDE PANEL */}
       <div
         style={{
           width: "25%",
@@ -201,18 +166,11 @@ export default function TransitMap() {
       >
         <h3>Active Alerts ({alerts.length})</h3>
 
-        {alerts.map((alert, i) => (
-          <div
-            key={alert.id || i}
-            style={{
-              padding: "8px",
-              marginBottom: "8px",
-              borderBottom: "1px solid #333",
-            }}
-          >
-            <strong>{alert.title || "Alert"}</strong>
+        {alerts.map((a, i) => (
+          <div key={a.id || i} style={{ marginBottom: "10px" }}>
+            <strong>{a.title || "Alert"}</strong>
             <p style={{ fontSize: "12px" }}>
-              {alert.description}
+              {a.description || "No description"}
             </p>
           </div>
         ))}
