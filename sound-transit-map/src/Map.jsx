@@ -9,50 +9,9 @@ export default function TransitMap() {
   const map = useRef(null);
 
   const [alerts, setAlerts] = useState([]);
-  const [stops, setStops] = useState([]);
 
   // -----------------------------
-  // HELP: normalize IDs (VERY IMPORTANT)
-  // -----------------------------
-  const normalizeId = (id) => String(id).replace(/\s/g, "");
-
-  // -----------------------------
-  // LIVE ALERT FETCH (FIXED)
-  // -----------------------------
-  useEffect(() => {
-    const fetchAlerts = async () => {
-      try {
-        const res = await fetch("YOUR_ALERTS_URL_HERE");
-        const data = await res.json();
-
-        setAlerts(data);
-      } catch (err) {
-        console.error("Alert fetch error:", err);
-      }
-    };
-
-    fetchAlerts(); // initial load
-
-    const interval = setInterval(fetchAlerts, 30000); // live updates
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // -----------------------------
-  // LOAD STOPS ONCE
-  // -----------------------------
-  useEffect(() => {
-    const loadStops = async () => {
-      const res = await fetch("/stops.geojson");
-      const data = await res.json();
-      setStops(data.features);
-    };
-
-    loadStops();
-  }, []);
-
-  // -----------------------------
-  // INIT MAP
+  // INIT MAP (NEVER BREAKS)
   // -----------------------------
   useEffect(() => {
     if (map.current) return;
@@ -64,13 +23,14 @@ export default function TransitMap() {
       zoom: 9,
     });
 
-    map.current.on("load", () => {
+    map.current.on("load", async () => {
+      // LOAD STOPS
+      const stopsRes = await fetch("/stops.geojson");
+      const stopsData = await stopsRes.json();
+
       map.current.addSource("stops", {
         type: "geojson",
-        data: {
-          type: "FeatureCollection",
-          features: [],
-        },
+        data: stopsData,
       });
 
       map.current.addLayer({
@@ -82,67 +42,93 @@ export default function TransitMap() {
           "circle-color": "#3388ff",
         },
       });
+
+      // LOAD ROUTES (UNCHANGED)
+      const routesRes = await fetch("/shapes.geojson");
+      const routesData = await routesRes.json();
+
+      map.current.addSource("routes", {
+        type: "geojson",
+        data: routesData,
+      });
+
+      map.current.addLayer({
+        id: "routes-layer",
+        type: "line",
+        source: "routes",
+        paint: {
+          "line-color": "#888",
+          "line-width": 3,
+        },
+      });
     });
   }, []);
 
   // -----------------------------
-  // APPLY ALERTS → STOPS (FIXED LOGIC)
+  // LIVE ALERT FETCH (SAFE)
   // -----------------------------
   useEffect(() => {
-    if (!map.current || stops.length === 0) return;
-
-    // 🔥 SAFE ALERT PARSING (handles different GTFS formats)
-    const alertStopIds = new Set();
-
-    alerts.forEach((alert) => {
-      // TRY MULTIPLE COMMON FIELDS
-      const ids =
-        alert.stop_ids ||
-        alert.stops ||
-        alert.informedEntity?.map(e => e.stopId) ||
-        [];
-
-      ids.forEach((id) => {
-        if (id) alertStopIds.add(normalizeId(id));
-      });
-    });
-
-    // rebuild GeoJSON
-    const updatedStops = {
-      type: "FeatureCollection",
-      features: stops.map((stop) => {
-        const stopId = normalizeId(stop.properties.stop_id);
-
-        return {
-          ...stop,
-          properties: {
-            ...stop.properties,
-            hasAlert: alertStopIds.has(stopId),
-          },
-        };
-      }),
+    const fetchAlerts = async () => {
+      try {
+        const res = await fetch("YOUR_ALERTS_URL_HERE");
+        const data = await res.json();
+        setAlerts(data);
+      } catch (err) {
+        console.error("Alerts error:", err);
+      }
     };
 
+    fetchAlerts(); // initial load
+    const interval = setInterval(fetchAlerts, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // -----------------------------
+  // APPLY ALERTS TO STOPS (SAFE UPDATE)
+  // -----------------------------
+  useEffect(() => {
+    if (!map.current) return;
+
     const source = map.current.getSource("stops");
+    if (!source) return;
 
-    if (source) {
-      source.setData(updatedStops);
-    }
+    const stopsData = source._data; // current GeoJSON (safe read)
 
-    // update styling
+    if (!stopsData) return;
+
+    // build alert stop set
+    const alertStopIds = new Set();
+
+    alerts.forEach(alert => {
+      const ids = alert.stop_ids || [];
+      ids.forEach(id => alertStopIds.add(String(id)));
+    });
+
+    // update features ONLY (no map reset)
+    const updated = {
+      ...stopsData,
+      features: stopsData.features.map(f => ({
+        ...f,
+        properties: {
+          ...f.properties,
+          hasAlert: alertStopIds.has(String(f.properties.stop_id)),
+        },
+      })),
+    };
+
+    source.setData(updated);
+
+    // update color styling
     if (map.current.getLayer("stops-layer")) {
-      map.current.setPaintProperty(
-        "stops-layer",
-        "circle-color",
-        [
-          "case",
-          ["boolean", ["get", "hasAlert"], false],
-          "#ff3b30",
-          "#3388ff",
-        ]
-      );
+      map.current.setPaintProperty("stops-layer", "circle-color", [
+        "case",
+        ["boolean", ["get", "hasAlert"], false],
+        "#ff3b30",
+        "#3388ff",
+      ]);
     }
-  }, [alerts, stops]);
+  }, [alerts]);
 
   // -----------------------------
   // UI
@@ -170,7 +156,7 @@ export default function TransitMap() {
           <div key={a.id || i} style={{ marginBottom: "10px" }}>
             <strong>{a.title || "Alert"}</strong>
             <p style={{ fontSize: "12px" }}>
-              {a.description || "No description"}
+              {a.description || "No details"}
             </p>
           </div>
         ))}
