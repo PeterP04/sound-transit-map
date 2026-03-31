@@ -51,6 +51,7 @@ The goal is to provide a fast, visual, and intuitive way to understand transit d
   https://s3.amazonaws.com/st-service-alerts-prod/alerts_pb.json
 
 - 🚆 Transit Data (Sound Transit GTFS Schedule Files)
+  - https://www.soundtransit.org/help-contacts/business-information/open-transit-data-otd/otd-downloads  
   - `shapes.geojson` — rail routes
   - `stops.geojson` — station stops
 
