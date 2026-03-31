@@ -3,7 +3,7 @@ import json
 from collections import defaultdict
 
 # -----------------------------
-# FILE PATHS (edit if needed)
+# FILE PATHS
 # -----------------------------
 SHAPES_FILE = "shapes.txt"
 TRIPS_FILE = "trips.txt"
@@ -12,29 +12,39 @@ ROUTES_FILE = "routes.txt"
 OUTPUT_FILE = r"C:\Users\petph\ReactProjects\sound-transit-gtfs\sound-transit-map\public\shapes.geojson"
 
 # -----------------------------
-# LOAD GTFS DATA
+# LOAD DATA
 # -----------------------------
 shapes = pd.read_csv(SHAPES_FILE)
 trips = pd.read_csv(TRIPS_FILE)
 routes = pd.read_csv(ROUTES_FILE)
 
 # -----------------------------
-# BUILD ROUTE LOOKUP
-# route_id → route_name
+# ROUTE LOOKUP
+# route_id → {short, long}
 # -----------------------------
 route_lookup = {}
+
 for _, row in routes.iterrows():
-    route_lookup[row["route_id"]] = row.get("route_long_name", row.get("route_short_name", "Unknown Route"))
+    route_lookup[row["route_id"]] = {
+        "route_short_name": row.get("route_short_name", ""),
+        "route_long_name": row.get("route_long_name", "")
+    }
 
 # -----------------------------
-# MAP trip_id → route_id
+# SHAPE → ROUTE LOOKUP (FASTER)
 # -----------------------------
-trip_to_route = {}
+shape_to_route = {}
+
 for _, row in trips.iterrows():
-    trip_to_route[row["trip_id"]] = row["route_id"]
+    shape_id = row["shape_id"]
+    route_id = row["route_id"]
+
+    # only assign first match (good enough)
+    if shape_id not in shape_to_route:
+        shape_to_route[shape_id] = route_id
 
 # -----------------------------
-# GROUP SHAPES INTO LINES
+# GROUP SHAPES
 # -----------------------------
 shapes_grouped = defaultdict(list)
 
@@ -47,21 +57,20 @@ for _, row in shapes.iterrows():
 features = []
 
 for shape_id, points in shapes_grouped.items():
-    # sort by sequence
     points = sorted(points, key=lambda x: x["shape_pt_sequence"])
 
-    coordinates = [[row["shape_pt_lon"], row["shape_pt_lat"]] for row in points]
+    coordinates = [
+        [row["shape_pt_lon"], row["shape_pt_lat"]] for row in points
+    ]
 
-    # try to infer route_id via trips
-    route_id = None
-    route_name = None
+    route_id = shape_to_route.get(shape_id)
 
-    # find any trip that uses this shape_id
-    match = trips[trips["shape_id"] == shape_id]
+    route_short_name = None
+    route_long_name = None
 
-    if not match.empty:
-        route_id = match.iloc[0]["route_id"]
-        route_name = route_lookup.get(route_id, "Unknown Route")
+    if route_id and route_id in route_lookup:
+        route_short_name = route_lookup[route_id]["route_short_name"]
+        route_long_name = route_lookup[route_id]["route_long_name"]
 
     feature = {
         "type": "Feature",
@@ -72,7 +81,8 @@ for shape_id, points in shapes_grouped.items():
         "properties": {
             "shape_id": shape_id,
             "route_id": route_id,
-            "route_name": route_name
+            "route_short_name": route_short_name,
+            "route_long_name": route_long_name
         }
     }
 
@@ -84,7 +94,7 @@ geojson = {
 }
 
 # -----------------------------
-# SAVE OUTPUT
+# SAVE
 # -----------------------------
 with open(OUTPUT_FILE, "w") as f:
     json.dump(geojson, f)
