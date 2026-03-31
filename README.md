@@ -55,6 +55,9 @@ The goal is to provide a fast, visual, and intuitive way to understand transit d
   - `stops.geojson` — station stops
 
 - Python scripts to clean GTFS data into GeoJSON files for web mapping
+  - convert_shapes.py
+  - convert_stops.py
+  
 ---
 
 ## How It Works
