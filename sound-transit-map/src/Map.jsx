@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -16,26 +16,52 @@ export default function Map() {
   const shapesRef = useRef(null);
   const stopsRef = useRef(null);
 
+  const routesRef = useRef(null);
+
   // -----------------------------
-  // 🔍 HELPERS
+  // ⚡ FAST LOOKUP MAPS
+  // -----------------------------
+  const routeMap = useMemo(() => {
+    const map = {};
+    if (!routesRef.current) return map;
+
+    routesRef.current.forEach((r) => {
+      map[String(r.route_id)] = {
+        short: r.route_short_name,
+        long: r.route_long_name,
+      };
+    });
+
+    return map;
+  }, [routesRef.current]);
+
+  const stopMap = useMemo(() => {
+    const map = {};
+    if (!stopsRef.current?.features) return map;
+
+    stopsRef.current.features.forEach((f) => {
+      map[String(f.properties.stop_id)] = f.properties.stop_name;
+    });
+
+    return map;
+  }, [stopsRef.current]);
+
+  // -----------------------------
+  // 🚀 FAST HELPERS (NO .find)
   // -----------------------------
   const getRouteName = (routeId) => {
-    const f = shapesRef.current?.features.find(
-      (x) => String(x.properties.route_id) === String(routeId)
-    );
+    const route = routeMap[String(routeId)];
+
     return (
-      f?.properties?.route_short_name ||
-      f?.properties?.route_long_name ||
+      route?.short ||
+      route?.long ||
       routeId ||
       "Unknown"
     );
   };
 
   const getStopName = (stopId) => {
-    const f = stopsRef.current?.features.find(
-      (x) => String(x.properties.stop_id) === String(stopId)
-    );
-    return f?.properties?.stop_name || stopId;
+    return stopMap[String(stopId)] || stopId;
   };
 
   // -----------------------------
@@ -49,7 +75,7 @@ export default function Map() {
           const entities = data.entity || [];
           setAlerts(entities);
 
-          const stopMap = {};
+          const stopMapLocal = {};
           const severityMap = {};
 
           entities.forEach((e) => {
@@ -65,8 +91,11 @@ export default function Map() {
               if (ent.stop_id && !seenStops.has(ent.stop_id)) {
                 seenStops.add(ent.stop_id);
 
-                if (!stopMap[ent.stop_id]) stopMap[ent.stop_id] = new Set();
-                stopMap[ent.stop_id].add(text);
+                if (!stopMapLocal[ent.stop_id]) {
+                  stopMapLocal[ent.stop_id] = new Set();
+                }
+
+                stopMapLocal[ent.stop_id].add(text);
 
                 severityMap[ent.stop_id] =
                   alert?.severity_level || "unknown";
@@ -75,12 +104,12 @@ export default function Map() {
           });
 
           stopAlertMap.current = Object.fromEntries(
-            Object.entries(stopMap).map(([k, v]) => [k, [...v]])
+            Object.entries(stopMapLocal).map(([k, v]) => [k, [...v]])
           );
 
           stopSeverityMap.current = severityMap;
 
-          // 🔄 FORCE MAP UPDATE
+          // 🔄 refresh map source
           if (map.current?.getSource("stops")) {
             map.current.getSource("stops").setData(stopsRef.current);
           }
@@ -115,7 +144,7 @@ export default function Map() {
       shapesRef.current = await shapesRes.json();
       stopsRef.current = await stopsRes.json();
 
-      // 🚆 ROUTES
+      // 🚆 SHAPES
       map.current.addSource("shapes", {
         type: "geojson",
         data: shapesRef.current,
@@ -143,20 +172,11 @@ export default function Map() {
         source: "stops",
         paint: {
           "circle-radius": 6,
-          "circle-color": [
-            "case",
-            [
-              "in",
-              ["get", "stop_id"],
-              ["literal", Object.keys(stopSeverityMap.current)],
-            ],
-            "#ef4444",
-            "#2563eb",
-          ],
+          "circle-color": "#2563eb",
         },
       });
 
-      // 🚆 LINE HOVER
+      // 🚆 HOVER POPUP
       const linePopup = new mapboxgl.Popup({
         closeButton: false,
         closeOnClick: false,
@@ -170,14 +190,11 @@ export default function Map() {
         const routeName =
           props.route_short_name ||
           props.route_long_name ||
-          props.route_id;
+          getRouteName(props.route_id);
 
         linePopup
           .setLngLat(e.lngLat)
-          .setHTML(`
-            <strong>🚆 Route</strong><br/>
-            ${routeName}
-          `)
+          .setHTML(`<strong>🚆 ${routeName}</strong>`)
           .addTo(map.current);
       });
 
@@ -186,7 +203,7 @@ export default function Map() {
         linePopup.remove();
       });
 
-      // 🚉 STOP POPUP
+      // 🚉 STOP CLICK
       map.current.on("click", "stops", (e) => {
         const props = e.features[0].properties;
 
@@ -196,7 +213,7 @@ export default function Map() {
         new mapboxgl.Popup()
           .setLngLat(e.lngLat)
           .setHTML(`
-            <strong>${props.stop_name}</strong><br/><br/>
+            <strong>${getStopName(props.stop_id)}</strong><br/><br/>
             ${
               alertsForStop.length
                 ? alertsForStop.map((a) => `⚠️ ${a}`).join("<br/>")
@@ -250,7 +267,10 @@ export default function Map() {
             const routes = [
               ...new Set(
                 alert?.informed_entity
-                  ?.map((e) => getRouteName(e.route_id))
+                  ?.map((e) =>
+                    props?.route_short_name ||
+                    getRouteName(e.route_id)
+                  )
                   .filter(Boolean)
               ),
             ].join(", ");
