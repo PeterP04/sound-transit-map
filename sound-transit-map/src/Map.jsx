@@ -23,6 +23,7 @@ export default function Map() {
     const f = shapesRef.current?.features.find(
       (x) => String(x.properties.route_id) === String(routeId)
     );
+
     return (
       f?.properties?.route_short_name ||
       f?.properties?.route_long_name ||
@@ -39,7 +40,7 @@ export default function Map() {
   };
 
   // -----------------------------
-  // 🚨 LIVE ALERTS
+  // 🚨 LIVE ALERTS (NOW SORTED NEWEST FIRST)
   // -----------------------------
   useEffect(() => {
     const fetchAlerts = () => {
@@ -47,7 +48,23 @@ export default function Map() {
         .then((res) => res.json())
         .then((data) => {
           const entities = data.entity || [];
-          setAlerts(entities);
+
+          // 🔥 SORT ALERTS BY NEWEST FIRST
+          const sorted = [...entities].sort((a, b) => {
+            const getTime = (e) => {
+              const a = e.alert;
+
+              return (
+                Number(a?.timestamp) ||
+                Number(a?.active_period?.[0]?.start) ||
+                0
+              );
+            };
+
+            return getTime(b) - getTime(a);
+          });
+
+          setAlerts(sorted);
 
           const stopMap = {};
           const severityMap = {};
