@@ -4,163 +4,241 @@ import "mapbox-gl/dist/mapbox-gl.css";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-export default function TransitMap() {
+export default function Map() {
   const mapContainer = useRef(null);
   const map = useRef(null);
 
   const [alerts, setAlerts] = useState([]);
 
-  // -----------------------------
-  // INIT MAP (NEVER BREAKS)
-  // -----------------------------
+  const stopAlertMap = useRef({});
+  const stopSeverityMap = useRef({});
+
+  const shapesRef = useRef(null);
+  const stopsRef = useRef(null);
+
+  // 🚨 LOAD ALERTS (STOPS ONLY)
+  useEffect(() => {
+    fetch("https://s3.amazonaws.com/st-service-alerts-prod/alerts_pb.json")
+      .then((res) => res.json())
+      .then((data) => {
+        const entities = data.entity || [];
+        setAlerts(entities);
+
+        const stopMap = {};
+        const severityMap = {};
+
+        entities.forEach((e) => {
+          const alert = e.alert;
+
+          const text =
+            alert?.header_text?.translation?.[0]?.text ||
+            "Service Alert";
+
+          const seenStops = new Set();
+
+          alert?.informed_entity?.forEach((ent) => {
+            if (ent.stop_id && !seenStops.has(ent.stop_id)) {
+              seenStops.add(ent.stop_id);
+
+              if (!stopMap[ent.stop_id]) stopMap[ent.stop_id] = new Set();
+              stopMap[ent.stop_id].add(text);
+
+              stopSeverityMap.current[ent.stop_id] =
+                alert?.severity_level || "unknown";
+            }
+          });
+        });
+
+        stopAlertMap.current = Object.fromEntries(
+          Object.entries(stopMap).map(([k, v]) => [k, [...v]])
+        );
+      })
+      .catch(console.error);
+  }, []);
+
+  // 🗺️ INIT MAP
   useEffect(() => {
     if (map.current) return;
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center: [-122.3, 47.6],
-      zoom: 9,
+      style: "mapbox://styles/mapbox/streets-v11",
+      center: [-122.3321, 47.6062],
+      zoom: 10,
     });
 
     map.current.on("load", async () => {
-      // LOAD STOPS
-      const stopsRes = await fetch("/stops.geojson");
-      const stopsData = await stopsRes.json();
+      const [shapesRes, stopsRes] = await Promise.all([
+        fetch("/shapes.geojson"),
+        fetch("/stops.geojson"),
+      ]);
 
-      map.current.addSource("stops", {
+      shapesRef.current = await shapesRes.json();
+      stopsRef.current = await stopsRes.json();
+
+      // 🚆 ROUTES (NO ALERT LOGIC)
+      map.current.addSource("shapes", {
         type: "geojson",
-        data: stopsData,
+        data: shapesRef.current,
       });
 
       map.current.addLayer({
-        id: "stops-layer",
+        id: "rail-lines",
+        type: "line",
+        source: "shapes",
+        paint: {
+          "line-width": 3,
+          "line-color": "#6b7280",
+        },
+      });
+
+      // 🚉 STOPS
+      map.current.addSource("stops", {
+        type: "geojson",
+        data: stopsRef.current,
+      });
+
+      map.current.addLayer({
+        id: "stops",
         type: "circle",
         source: "stops",
         paint: {
-          "circle-radius": 5,
-          "circle-color": "#3388ff",
+          "circle-radius": 6,
+          "circle-color": [
+            "case",
+            [
+              "in",
+              ["get", "stop_id"],
+              ["literal", Object.keys(stopSeverityMap.current)],
+            ],
+            "#ef4444",
+            "#2563eb",
+          ],
         },
       });
 
-      // LOAD ROUTES (UNCHANGED)
-      const routesRes = await fetch("/shapes.geojson");
-      const routesData = await routesRes.json();
-
-      map.current.addSource("routes", {
-        type: "geojson",
-        data: routesData,
+      // 🚆 LINE HOVER POPUP (NO ALERTS)
+      const linePopup = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false,
       });
 
-      map.current.addLayer({
-        id: "routes-layer",
-        type: "line",
-        source: "routes",
-        paint: {
-          "line-color": "#888",
-          "line-width": 3,
-        },
+      map.current.on("mouseenter", "rail-lines", (e) => {
+        map.current.getCanvas().style.cursor = "pointer";
+
+        const props = e.features[0].properties;
+        const routeId = props.route_id || props.shape_id;
+
+        linePopup
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <strong>🚆 Route</strong><br/>
+            ID: ${routeId}<br/>
+            ${props.route_name ? `Name: ${props.route_name}` : ""}
+          `)
+          .addTo(map.current);
+      });
+
+      map.current.on("mouseleave", "rail-lines", () => {
+        map.current.getCanvas().style.cursor = "";
+        linePopup.remove();
+      });
+
+      // 🚉 STOP POPUP (WITH ALERTS)
+      map.current.on("click", "stops", (e) => {
+        const props = e.features[0].properties;
+
+        const alertsForStop =
+          stopAlertMap.current[props.stop_id] || [];
+
+        new mapboxgl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(`
+            <strong>${props.stop_name}</strong><br/><br/>
+            ${
+              alertsForStop.length
+                ? alertsForStop.map((a) => `⚠️ ${a}`).join("<br/>")
+                : "No alerts"
+            }
+          `)
+          .addTo(map.current);
+      });
+
+      map.current.on("mouseenter", "stops", () => {
+        map.current.getCanvas().style.cursor = "pointer";
+      });
+
+      map.current.on("mouseleave", "stops", () => {
+        map.current.getCanvas().style.cursor = "";
       });
     });
   }, []);
 
-  // -----------------------------
-  // LIVE ALERT FETCH (SAFE)
-  // -----------------------------
-  useEffect(() => {
-    const fetchAlerts = async () => {
-      try {
-        const res = await fetch("YOUR_ALERTS_URL_HERE");
-        const data = await res.json();
-        setAlerts(data);
-      } catch (err) {
-        console.error("Alerts error:", err);
-      }
-    };
-
-    fetchAlerts(); // initial load
-    const interval = setInterval(fetchAlerts, 30000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // -----------------------------
-  // APPLY ALERTS TO STOPS (SAFE UPDATE)
-  // -----------------------------
-  useEffect(() => {
-    if (!map.current) return;
-
-    const source = map.current.getSource("stops");
-    if (!source) return;
-
-    const stopsData = source._data; // current GeoJSON (safe read)
-
-    if (!stopsData) return;
-
-    // build alert stop set
-    const alertStopIds = new Set();
-
-    alerts.forEach(alert => {
-      const ids = alert.stop_ids || [];
-      ids.forEach(id => alertStopIds.add(String(id)));
-    });
-
-    // update features ONLY (no map reset)
-    const updated = {
-      ...stopsData,
-      features: stopsData.features.map(f => ({
-        ...f,
-        properties: {
-          ...f.properties,
-          hasAlert: alertStopIds.has(String(f.properties.stop_id)),
-        },
-      })),
-    };
-
-    source.setData(updated);
-
-    // update color styling
-    if (map.current.getLayer("stops-layer")) {
-      map.current.setPaintProperty("stops-layer", "circle-color", [
-        "case",
-        ["boolean", ["get", "hasAlert"], false],
-        "#ff3b30",
-        "#3388ff",
-      ]);
-    }
-  }, [alerts]);
-
-  // -----------------------------
-  // UI
-  // -----------------------------
   return (
-    <div style={{ display: "flex" }}>
-      <div
-        ref={mapContainer}
-        style={{ width: "75%", height: "100vh" }}
-      />
+    <div style={{ position: "relative" }}>
+      {/* 🚨 SIDE PANEL */}
+      {alerts.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: 10,
+            left: 10,
+            zIndex: 1,
+            background: "rgba(0,0,0,0.9)",
+            color: "white",
+            padding: "12px",
+            borderRadius: "8px",
+            fontSize: "12px",
+            maxWidth: "360px",
+            maxHeight: "400px",
+            overflowY: "auto",
+          }}
+        >
+          <strong>🚨 Active Alerts ({alerts.length})</strong>
 
-      <div
-        style={{
-          width: "25%",
-          height: "100vh",
-          overflow: "auto",
-          padding: "10px",
-          background: "#111",
-          color: "white",
-        }}
-      >
-        <h3>Active Alerts ({alerts.length})</h3>
+          {alerts.map((a, i) => {
+            const alert = a.alert;
 
-        {alerts.map((a, i) => (
-          <div key={a.id || i} style={{ marginBottom: "10px" }}>
-            <strong>{a.title || "Alert"}</strong>
-            <p style={{ fontSize: "12px" }}>
-              {a.description || "No details"}
-            </p>
-          </div>
-        ))}
-      </div>
+            const text =
+              alert?.header_text?.translation?.[0]?.text ||
+              "No description";
+
+            const routes = [
+              ...new Set(
+                alert?.informed_entity
+                  ?.map((e) => e.route_id)
+                  .filter(Boolean)
+              ),
+            ].join(", ");
+
+            const stops = [
+              ...new Set(
+                alert?.informed_entity
+                  ?.map((e) => e.stop_id)
+                  .filter(Boolean)
+              ),
+            ].join(", ");
+
+            return (
+              <div
+                key={i}
+                style={{
+                  marginTop: "10px",
+                  borderTop: "1px solid #444",
+                  paddingTop: "8px",
+                }}
+              >
+                <div>⚠️ {text}</div>
+                <div style={{ opacity: 0.7 }}>Routes: {routes}</div>
+                <div style={{ opacity: 0.7 }}>Stops: {stops}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 🗺️ MAP */}
+      <div ref={mapContainer} style={{ width: "100%", height: "100vh" }} />
     </div>
   );
 }
