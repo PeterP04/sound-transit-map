@@ -4,241 +4,219 @@ import "mapbox-gl/dist/mapbox-gl.css";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-export default function Map() {
+export default function TransitMap() {
   const mapContainer = useRef(null);
   const map = useRef(null);
 
   const [alerts, setAlerts] = useState([]);
+  const [stops, setStops] = useState([]);
+  const [routes, setRoutes] = useState([]);
 
-  const stopAlertMap = useRef({});
-  const stopSeverityMap = useRef({});
-
-  const shapesRef = useRef(null);
-  const stopsRef = useRef(null);
-
-  // 🚨 LOAD ALERTS (STOPS ONLY)
+  // -----------------------------
+  // FETCH ALERTS (auto-refresh)
+  // -----------------------------
   useEffect(() => {
-    fetch("https://s3.amazonaws.com/st-service-alerts-prod/alerts_pb.json")
-      .then((res) => res.json())
-      .then((data) => {
-        const entities = data.entity || [];
-        setAlerts(entities);
+    const fetchAlerts = async () => {
+      try {
+        const res = await fetch("YOUR_ALERTS_URL_HERE");
+        const data = await res.json();
 
-        const stopMap = {};
-        const severityMap = {};
-
-        entities.forEach((e) => {
-          const alert = e.alert;
-
-          const text =
-            alert?.header_text?.translation?.[0]?.text ||
-            "Service Alert";
-
-          const seenStops = new Set();
-
-          alert?.informed_entity?.forEach((ent) => {
-            if (ent.stop_id && !seenStops.has(ent.stop_id)) {
-              seenStops.add(ent.stop_id);
-
-              if (!stopMap[ent.stop_id]) stopMap[ent.stop_id] = new Set();
-              stopMap[ent.stop_id].add(text);
-
-              stopSeverityMap.current[ent.stop_id] =
-                alert?.severity_level || "unknown";
-            }
-          });
-        });
-
-        stopAlertMap.current = Object.fromEntries(
-          Object.entries(stopMap).map(([k, v]) => [k, [...v]])
+        // prevent duplicates
+        const unique = Array.from(
+          new Map(data.map(a => [a.id, a])).values()
         );
-      })
-      .catch(console.error);
+
+        setAlerts(unique);
+      } catch (err) {
+        console.error("Alert fetch error:", err);
+      }
+    };
+
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 30000);
+
+    return () => clearInterval(interval);
   }, []);
 
-  // 🗺️ INIT MAP
+  // -----------------------------
+  // INIT MAP (ONCE)
+  // -----------------------------
   useEffect(() => {
     if (map.current) return;
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v11",
-      center: [-122.3321, 47.6062],
-      zoom: 10,
+      style: "mapbox://styles/mapbox/streets-v12",
+      center: [-122.3, 47.6],
+      zoom: 9,
     });
 
-    map.current.on("load", async () => {
-      const [shapesRes, stopsRes] = await Promise.all([
-        fetch("/shapes.geojson"),
-        fetch("/stops.geojson"),
-      ]);
-
-      shapesRef.current = await shapesRes.json();
-      stopsRef.current = await stopsRes.json();
-
-      // 🚆 ROUTES (NO ALERT LOGIC)
-      map.current.addSource("shapes", {
-        type: "geojson",
-        data: shapesRef.current,
-      });
-
-      map.current.addLayer({
-        id: "rail-lines",
-        type: "line",
-        source: "shapes",
-        paint: {
-          "line-width": 3,
-          "line-color": "#6b7280",
-        },
-      });
-
-      // 🚉 STOPS
+    map.current.on("load", () => {
+      // -----------------------------
+      // LOAD STOPS (GeoJSON)
+      // -----------------------------
       map.current.addSource("stops", {
         type: "geojson",
-        data: stopsRef.current,
+        data: "/stops.geojson",
       });
 
       map.current.addLayer({
-        id: "stops",
+        id: "stops-layer",
         type: "circle",
         source: "stops",
         paint: {
-          "circle-radius": 6,
-          "circle-color": [
-            "case",
-            [
-              "in",
-              ["get", "stop_id"],
-              ["literal", Object.keys(stopSeverityMap.current)],
-            ],
-            "#ef4444",
-            "#2563eb",
-          ],
+          "circle-radius": 5,
+          "circle-color": "#3388ff",
         },
       });
 
-      // 🚆 LINE HOVER POPUP (NO ALERTS)
-      const linePopup = new mapboxgl.Popup({
+      // -----------------------------
+      // LOAD ROUTES (NO ALERT COLORS)
+      // -----------------------------
+      map.current.addSource("routes", {
+        type: "geojson",
+        data: "/shapes.geojson",
+      });
+
+      map.current.addLayer({
+        id: "routes-layer",
+        type: "line",
+        source: "routes",
+        paint: {
+          "line-color": "#888",
+          "line-width": 3,
+        },
+      });
+
+      // -----------------------------
+      // ROUTE HOVER POPUP
+      // -----------------------------
+      const popup = new mapboxgl.Popup({
         closeButton: false,
         closeOnClick: false,
       });
 
-      map.current.on("mouseenter", "rail-lines", (e) => {
+      map.current.on("mouseenter", "routes-layer", (e) => {
         map.current.getCanvas().style.cursor = "pointer";
 
         const props = e.features[0].properties;
-        const routeId = props.route_id || props.shape_id;
 
-        linePopup
+        popup
           .setLngLat(e.lngLat)
           .setHTML(`
-            <strong>🚆 Route</strong><br/>
-            ID: ${routeId}<br/>
-            ${props.route_name ? `Name: ${props.route_name}` : ""}
+            <div>
+              <strong>Route:</strong> ${props.route_id || "Unknown"}<br/>
+              <strong>Service:</strong> ${props.service || "N/A"}
+            </div>
           `)
           .addTo(map.current);
       });
 
-      map.current.on("mouseleave", "rail-lines", () => {
+      map.current.on("mouseleave", "routes-layer", () => {
         map.current.getCanvas().style.cursor = "";
-        linePopup.remove();
-      });
-
-      // 🚉 STOP POPUP (WITH ALERTS)
-      map.current.on("click", "stops", (e) => {
-        const props = e.features[0].properties;
-
-        const alertsForStop =
-          stopAlertMap.current[props.stop_id] || [];
-
-        new mapboxgl.Popup()
-          .setLngLat(e.lngLat)
-          .setHTML(`
-            <strong>${props.stop_name}</strong><br/><br/>
-            ${
-              alertsForStop.length
-                ? alertsForStop.map((a) => `⚠️ ${a}`).join("<br/>")
-                : "No alerts"
-            }
-          `)
-          .addTo(map.current);
-      });
-
-      map.current.on("mouseenter", "stops", () => {
-        map.current.getCanvas().style.cursor = "pointer";
-      });
-
-      map.current.on("mouseleave", "stops", () => {
-        map.current.getCanvas().style.cursor = "";
+        popup.remove();
       });
     });
   }, []);
 
+  // -----------------------------
+  // UPDATE STOP COLORS WHEN ALERTS CHANGE
+  // -----------------------------
+  useEffect(() => {
+    if (!map.current) return;
+
+    const alertStopIds = new Set(
+      alerts.flatMap(a => a.stop_ids || [])
+    );
+
+    const updatedStops = {
+      type: "FeatureCollection",
+      features: stops.map(stop => ({
+        ...stop,
+        properties: {
+          ...stop.properties,
+          hasAlert: alertStopIds.has(stop.properties.stop_id),
+        },
+      })),
+    };
+
+    const source = map.current.getSource("stops");
+    if (source) {
+      source.setData(updatedStops);
+    }
+
+    // update paint only once source exists
+    if (map.current.getLayer("stops-layer")) {
+      map.current.setPaintProperty(
+        "stops-layer",
+        "circle-color",
+        [
+          "case",
+          ["boolean", ["get", "hasAlert"], false],
+          "#ff3b30", // red if alert
+          "#3388ff", // default blue
+        ]
+      );
+    }
+  }, [alerts, stops]);
+
+  // -----------------------------
+  // LOAD GTFS STOPS (ONCE)
+  // -----------------------------
+  useEffect(() => {
+    const loadStops = async () => {
+      try {
+        const res = await fetch("/stops.geojson");
+        const data = await res.json();
+        setStops(data.features);
+      } catch (err) {
+        console.error("Stop load error:", err);
+      }
+    };
+
+    loadStops();
+  }, []);
+
+  // -----------------------------
+  // UI
+  // -----------------------------
   return (
-    <div style={{ position: "relative" }}>
-      {/* 🚨 SIDE PANEL */}
-      {alerts.length > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            top: 10,
-            left: 10,
-            zIndex: 1,
-            background: "rgba(0,0,0,0.9)",
-            color: "white",
-            padding: "12px",
-            borderRadius: "8px",
-            fontSize: "12px",
-            maxWidth: "360px",
-            maxHeight: "400px",
-            overflowY: "auto",
-          }}
-        >
-          <strong>🚨 Active Alerts ({alerts.length})</strong>
+    <div style={{ display: "flex" }}>
+      {/* MAP */}
+      <div
+        ref={mapContainer}
+        style={{ width: "75%", height: "100vh" }}
+      />
 
-          {alerts.map((a, i) => {
-            const alert = a.alert;
+      {/* ALERT SIDE PANEL */}
+      <div
+        style={{
+          width: "25%",
+          height: "100vh",
+          overflow: "auto",
+          padding: "10px",
+          background: "#111",
+          color: "white",
+        }}
+      >
+        <h3>Active Alerts ({alerts.length})</h3>
 
-            const text =
-              alert?.header_text?.translation?.[0]?.text ||
-              "No description";
-
-            const routes = [
-              ...new Set(
-                alert?.informed_entity
-                  ?.map((e) => e.route_id)
-                  .filter(Boolean)
-              ),
-            ].join(", ");
-
-            const stops = [
-              ...new Set(
-                alert?.informed_entity
-                  ?.map((e) => e.stop_id)
-                  .filter(Boolean)
-              ),
-            ].join(", ");
-
-            return (
-              <div
-                key={i}
-                style={{
-                  marginTop: "10px",
-                  borderTop: "1px solid #444",
-                  paddingTop: "8px",
-                }}
-              >
-                <div>⚠️ {text}</div>
-                <div style={{ opacity: 0.7 }}>Routes: {routes}</div>
-                <div style={{ opacity: 0.7 }}>Stops: {stops}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* 🗺️ MAP */}
-      <div ref={mapContainer} style={{ width: "100%", height: "100vh" }} />
+        {alerts.map((alert, i) => (
+          <div
+            key={alert.id || i}
+            style={{
+              padding: "8px",
+              marginBottom: "8px",
+              borderBottom: "1px solid #333",
+            }}
+          >
+            <strong>{alert.title || "Alert"}</strong>
+            <p style={{ fontSize: "12px" }}>
+              {alert.description}
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
