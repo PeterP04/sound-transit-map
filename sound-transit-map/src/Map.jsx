@@ -16,47 +16,66 @@ export default function Map() {
   const shapesRef = useRef(null);
   const stopsRef = useRef(null);
 
-  // 🚨 LOAD ALERTS (STOPS ONLY)
+  // -----------------------------
+  // 🚨 LIVE ALERTS (NOW REFRESHING)
+  // -----------------------------
   useEffect(() => {
-    fetch("https://s3.amazonaws.com/st-service-alerts-prod/alerts_pb.json")
-      .then((res) => res.json())
-      .then((data) => {
-        const entities = data.entity || [];
-        setAlerts(entities);
+    const fetchAlerts = () => {
+      fetch("https://s3.amazonaws.com/st-service-alerts-prod/alerts_pb.json")
+        .then((res) => res.json())
+        .then((data) => {
+          const entities = data.entity || [];
+          setAlerts(entities);
 
-        const stopMap = {};
-        const severityMap = {};
+          const stopMap = {};
+          const severityMap = {};
 
-        entities.forEach((e) => {
-          const alert = e.alert;
+          entities.forEach((e) => {
+            const alert = e.alert;
 
-          const text =
-            alert?.header_text?.translation?.[0]?.text ||
-            "Service Alert";
+            const text =
+              alert?.header_text?.translation?.[0]?.text ||
+              "Service Alert";
 
-          const seenStops = new Set();
+            const seenStops = new Set();
 
-          alert?.informed_entity?.forEach((ent) => {
-            if (ent.stop_id && !seenStops.has(ent.stop_id)) {
-              seenStops.add(ent.stop_id);
+            alert?.informed_entity?.forEach((ent) => {
+              if (ent.stop_id && !seenStops.has(ent.stop_id)) {
+                seenStops.add(ent.stop_id);
 
-              if (!stopMap[ent.stop_id]) stopMap[ent.stop_id] = new Set();
-              stopMap[ent.stop_id].add(text);
+                if (!stopMap[ent.stop_id]) stopMap[ent.stop_id] = new Set();
+                stopMap[ent.stop_id].add(text);
 
-              stopSeverityMap.current[ent.stop_id] =
-                alert?.severity_level || "unknown";
-            }
+                severityMap[ent.stop_id] =
+                  alert?.severity_level || "unknown";
+              }
+            });
           });
-        });
 
-        stopAlertMap.current = Object.fromEntries(
-          Object.entries(stopMap).map(([k, v]) => [k, [...v]])
-        );
-      })
-      .catch(console.error);
+          stopAlertMap.current = Object.fromEntries(
+            Object.entries(stopMap).map(([k, v]) => [k, [...v]])
+          );
+
+          stopSeverityMap.current = severityMap;
+
+          // 🔥 IMPORTANT: update map layer if it already exists
+          if (map.current?.getSource("stops")) {
+            map.current.getSource("stops").setData(stopsRef.current);
+          }
+        })
+        .catch(console.error);
+    };
+
+    fetchAlerts(); // initial load
+
+    const interval = setInterval(fetchAlerts, 30000); // 🔄 LIVE UPDATES
+
+    return () => clearInterval(interval);
   }, []);
 
+  // -----------------------------
   // 🗺️ INIT MAP
+  // -----------------------------
   useEffect(() => {
     if (map.current) return;
 
@@ -76,7 +95,7 @@ export default function Map() {
       shapesRef.current = await shapesRes.json();
       stopsRef.current = await stopsRes.json();
 
-      // 🚆 ROUTES (NO ALERT LOGIC)
+      // 🚆 ROUTES
       map.current.addSource("shapes", {
         type: "geojson",
         data: shapesRef.current,
@@ -117,7 +136,7 @@ export default function Map() {
         },
       });
 
-      // 🚆 LINE HOVER POPUP (NO ALERTS)
+      // 🚆 LINE HOVER POPUP
       const linePopup = new mapboxgl.Popup({
         closeButton: false,
         closeOnClick: false,
@@ -144,7 +163,7 @@ export default function Map() {
         linePopup.remove();
       });
 
-      // 🚉 STOP POPUP (WITH ALERTS)
+      // 🚉 STOP POPUP
       map.current.on("click", "stops", (e) => {
         const props = e.features[0].properties;
 
@@ -174,9 +193,11 @@ export default function Map() {
     });
   }, []);
 
+  // -----------------------------
+  // 🚨 SIDE PANEL
+  // -----------------------------
   return (
     <div style={{ position: "relative" }}>
-      {/* 🚨 SIDE PANEL */}
       {alerts.length > 0 && (
         <div
           style={{
@@ -237,7 +258,6 @@ export default function Map() {
         </div>
       )}
 
-      {/* 🗺️ MAP */}
       <div ref={mapContainer} style={{ width: "100%", height: "100vh" }} />
     </div>
   );
