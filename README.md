@@ -38,7 +38,8 @@ The goal is to provide a fast, visual, and intuitive way to understand transit d
 
 - React (Vite)
 - Mapbox GL JS
-- JavaScript 
+- JavaScript
+- Python
 - GeoJSON (GTFS-derived data)
 - Sound Transit Public Alerts API
 
@@ -53,6 +54,7 @@ The goal is to provide a fast, visual, and intuitive way to understand transit d
   - `shapes.geojson` — rail routes
   - `stops.geojson` — station stops
 
+- Python scripts to clean GTFS data into GeoJSON files for web mapping
 ---
 
 ## How It Works
