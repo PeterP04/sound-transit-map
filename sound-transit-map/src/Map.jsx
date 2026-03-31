@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -16,41 +16,17 @@ export default function Map() {
   const shapesRef = useRef(null);
   const stopsRef = useRef(null);
 
-  const routesRef = useRef(null);
+  // -----------------------------
+  // ⚡ FAST LOOKUP MAPS (REF-BASED)
+  // -----------------------------
+  const routeMapRef = useRef({});
+  const stopMapRef = useRef({});
 
   // -----------------------------
-  // ⚡ FAST LOOKUP MAPS
-  // -----------------------------
-  const routeMap = useMemo(() => {
-    const map = {};
-    if (!routesRef.current) return map;
-
-    routesRef.current.forEach((r) => {
-      map[String(r.route_id)] = {
-        short: r.route_short_name,
-        long: r.route_long_name,
-      };
-    });
-
-    return map;
-  }, [routesRef.current]);
-
-  const stopMap = useMemo(() => {
-    const map = {};
-    if (!stopsRef.current?.features) return map;
-
-    stopsRef.current.features.forEach((f) => {
-      map[String(f.properties.stop_id)] = f.properties.stop_name;
-    });
-
-    return map;
-  }, [stopsRef.current]);
-
-  // -----------------------------
-  // 🚀 FAST HELPERS (NO .find)
+  // 🚀 FAST HELPERS (O(1) LOOKUP)
   // -----------------------------
   const getRouteName = (routeId) => {
-    const route = routeMap[String(routeId)];
+    const route = routeMapRef.current[String(routeId)];
 
     return (
       route?.short ||
@@ -61,7 +37,7 @@ export default function Map() {
   };
 
   const getStopName = (stopId) => {
-    return stopMap[String(stopId)] || stopId;
+    return stopMapRef.current[String(stopId)] || stopId;
   };
 
   // -----------------------------
@@ -75,7 +51,7 @@ export default function Map() {
           const entities = data.entity || [];
           setAlerts(entities);
 
-          const stopMapLocal = {};
+          const stopMap = {};
           const severityMap = {};
 
           entities.forEach((e) => {
@@ -91,11 +67,11 @@ export default function Map() {
               if (ent.stop_id && !seenStops.has(ent.stop_id)) {
                 seenStops.add(ent.stop_id);
 
-                if (!stopMapLocal[ent.stop_id]) {
-                  stopMapLocal[ent.stop_id] = new Set();
+                if (!stopMap[ent.stop_id]) {
+                  stopMap[ent.stop_id] = new Set();
                 }
 
-                stopMapLocal[ent.stop_id].add(text);
+                stopMap[ent.stop_id].add(text);
 
                 severityMap[ent.stop_id] =
                   alert?.severity_level || "unknown";
@@ -104,12 +80,12 @@ export default function Map() {
           });
 
           stopAlertMap.current = Object.fromEntries(
-            Object.entries(stopMapLocal).map(([k, v]) => [k, [...v]])
+            Object.entries(stopMap).map(([k, v]) => [k, [...v]])
           );
 
           stopSeverityMap.current = severityMap;
 
-          // 🔄 refresh map source
+          // refresh map source
           if (map.current?.getSource("stops")) {
             map.current.getSource("stops").setData(stopsRef.current);
           }
@@ -144,7 +120,39 @@ export default function Map() {
       shapesRef.current = await shapesRes.json();
       stopsRef.current = await stopsRes.json();
 
-      // 🚆 SHAPES
+      // -----------------------------
+      // 🚆 BUILD ROUTE MAP (FAST FIX HERE)
+      // -----------------------------
+      const routeMap = {};
+
+      shapesRef.current.features.forEach((f) => {
+        const r = f.properties;
+
+        if (r.route_id) {
+          routeMap[String(r.route_id)] = {
+            short: r.route_short_name,
+            long: r.route_long_name,
+          };
+        }
+      });
+
+      routeMapRef.current = routeMap;
+
+      // -----------------------------
+      // 🚉 BUILD STOP MAP (FAST FIX HERE)
+      // -----------------------------
+      const stopMap = {};
+
+      stopsRef.current.features.forEach((f) => {
+        stopMap[String(f.properties.stop_id)] =
+          f.properties.stop_name;
+      });
+
+      stopMapRef.current = stopMap;
+
+      // -----------------------------
+      // 🚆 SHAPES SOURCE
+      // -----------------------------
       map.current.addSource("shapes", {
         type: "geojson",
         data: shapesRef.current,
@@ -160,7 +168,9 @@ export default function Map() {
         },
       });
 
-      // 🚉 STOPS
+      // -----------------------------
+      // 🚉 STOPS SOURCE
+      // -----------------------------
       map.current.addSource("stops", {
         type: "geojson",
         data: stopsRef.current,
@@ -176,7 +186,9 @@ export default function Map() {
         },
       });
 
+      // -----------------------------
       // 🚆 HOVER POPUP
+      // -----------------------------
       const linePopup = new mapboxgl.Popup({
         closeButton: false,
         closeOnClick: false,
@@ -203,7 +215,9 @@ export default function Map() {
         linePopup.remove();
       });
 
-      // 🚉 STOP CLICK
+      // -----------------------------
+      // 🚉 STOP POPUP
+      // -----------------------------
       map.current.on("click", "stops", (e) => {
         const props = e.features[0].properties;
 
@@ -267,10 +281,7 @@ export default function Map() {
             const routes = [
               ...new Set(
                 alert?.informed_entity
-                  ?.map((e) =>
-                    props?.route_short_name ||
-                    getRouteName(e.route_id)
-                  )
+                  ?.map((e) => getRouteName(e.route_id))
                   .filter(Boolean)
               ),
             ].join(", ");
