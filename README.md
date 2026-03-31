@@ -1,6 +1,7 @@
 # 🚆 Sound Transit Live Alerts Map
 
 An interactive real-time web map that visualizes Sound Transit rail lines, station stops, and live service alerts using Mapbox GL JS and GTFS-style transit data.
+
 VIEW HERE: https://sound-transit-map.vercel.app/
 
 ---
