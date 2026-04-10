@@ -15,7 +15,7 @@ export default function Footer() {
     >
       {/* Left side */}
       <div>
-        🚆Sound Transit Alerts Map • Data: GTFS + Live Alerts
+        🚆Sound Transit Alerts Map • Data: Sound Transit Open Transit Data (GTFS + Live Alerts)
       </div>
 
       {/* Right side */}
