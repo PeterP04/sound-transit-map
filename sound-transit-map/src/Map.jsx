@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import Legend from "./components/Legend";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -315,7 +316,7 @@ export default function Map() {
           )}
         </div>
       )}
-
+      <Legend />
       {/* MAP */}
       <div style={{ width: "100%", height: "100%" }}>
         <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
