@@ -2,9 +2,6 @@ export default function Footer() {
   return (
     <div
       style={{
-        position: "absolute",
-        bottom: 0,
-        left: 0,
         width: "100%",
         height: "30px",
         background: "rgba(0,0,0,0.85)",
@@ -14,7 +11,6 @@ export default function Footer() {
         alignItems: "center",
         justifyContent: "space-between",
         padding: "0 12px",
-        zIndex: 2,
       }}
     >
       {/* Left side */}
