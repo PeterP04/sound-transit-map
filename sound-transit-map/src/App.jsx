@@ -10,7 +10,9 @@ function App() {
   return (
     <div className="app">
       <Header />
-      <Map />
+      <div className="mapContainer">
+        <Map />
+      </div>
     </div>
   );
 }
