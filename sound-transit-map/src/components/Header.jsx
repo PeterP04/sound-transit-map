@@ -28,7 +28,7 @@ export default function Header() {
         alignItems: "center",
       }}
     >
-      <div>🚆 Transit Alerts Map</div>
+      <div>🚆 Sound Transit Alerts Map</div>
 
       <div style={{ fontSize: "12px", opacity: 0.8 }}>
         {time.toLocaleTimeString()}
