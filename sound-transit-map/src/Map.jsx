@@ -239,6 +239,23 @@ export default function Map() {
   // -----------------------------
   return (
     <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          position: "absolute",
+          top: 10,
+          left: isOpen ? 370 : 10,
+          zIndex: 2,
+          padding: "6px 10px",
+          borderRadius: "6px",
+          border: "none",
+          background: "#111",
+          color: "white",
+          cursor: "pointer",
+        }}
+      >
+        {isOpen ? "←" : "→"}
+      </button>
       {alerts.length > 0 && (
         <div
           style={{
@@ -257,23 +274,6 @@ export default function Map() {
             transition: "all 0.3s ease",
           }}
         >
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            style={{
-              position: "absolute",
-              top: 10,
-              left: isOpen ? 370 : 10,
-              zIndex: 2,
-              padding: "6px 10px",
-              borderRadius: "6px",
-              border: "none",
-              background: "#111",
-              color: "white",
-              cursor: "pointer",
-            }}
-          >
-            {isOpen ? "←" : "→"}
-          </button>
           {isOpen && (
             <>
               <strong> 🚨 Active Alerts ({alerts.length})</strong>
@@ -309,13 +309,12 @@ export default function Map() {
                   </div>
                 );
               })}
-            </div>
+            </>
           )}
+        </div>
+      )}
 
           <div ref={mapContainer} style={{ width: "100%", height: "100vh" }} />
         </div>
       );
     }
-  })}
-</>
-)}
