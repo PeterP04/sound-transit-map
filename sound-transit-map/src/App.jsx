@@ -8,10 +8,10 @@ import Header from "./components/Header";
 
 function App() {
   return (
-    <>
-    <Header />
-    <Map />
-    </>
+    <div className="app">
+      <Header />
+      <Map />
+    </div>
   );
 }
 
