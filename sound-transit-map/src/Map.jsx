@@ -270,7 +270,8 @@ export default function Map() {
             fontSize: "12px",
             width: isOpen ? "360px" : "0px",
             maxHeight: "400px",
-            overflow: "hidden",
+            overflowX: "hidden",
+            overflowY: isOpen ? "auto" : "hidden",
             transition: "all 0.3s ease",
           }}
         >
