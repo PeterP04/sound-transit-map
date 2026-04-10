@@ -315,7 +315,8 @@ export default function Map() {
         </div>
       )}
 
-          <div ref={mapContainer} style={{ width: "100%", height: "100vh" }} />
+        <div style={{ flex: 1 }}>
+          <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
         </div>
       );
     }
