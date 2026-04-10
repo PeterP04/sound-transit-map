@@ -254,7 +254,7 @@ export default function Map() {
           cursor: "pointer",
         }}
       >
-        {isOpen ? "←" : "→"}
+        {isOpen ? "← close" : "open →"}
       </button>
       {alerts.length > 0 && (
         <div
