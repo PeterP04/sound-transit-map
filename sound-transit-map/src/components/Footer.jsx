@@ -20,7 +20,15 @@ export default function Footer() {
 
       {/* Right side */}
       <div>
-        Refresh: 30s • Map: Mapbox
+        Refresh: 30s • Map: Mapbox • Made by:{" "}
+        <a
+          href="www.linkedin.com/in/peter-pham-984817390"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "#60a5fa", textDecoration: "none" }}
+        >
+          Peter Pham
+        </a>
       </div>
     </div>
   );
