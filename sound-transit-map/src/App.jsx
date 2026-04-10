@@ -8,7 +8,7 @@ import Header from "./components/Header";
 
 function App() {
   return (
-    <div className="app">
+    <div style={{ height: "100vh", width: "100vw" }}>
       <Header />
       <Map />
     </div>
