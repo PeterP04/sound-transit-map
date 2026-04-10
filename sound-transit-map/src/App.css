@@ -1,21 +1,30 @@
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  overflow: hidden;
-  font-family: Arial, sans-serif;
-}
-
-/* prevents weird overflow bugs */
 * {
   box-sizing: border-box;
 }
 
-/* IMPORTANT: avoid 100vw issues */
 .app {
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  width: 100%;
   overflow: hidden;
+}
+
+/* Header takes natural height */
+header {
+  flex-shrink: 0;
+  width: 100%;
+}
+
+/* Map MUST be constrained properly */
+.mapContainer {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Mapbox canvas fix (VERY IMPORTANT) */
+.mapboxgl-canvas {
+  width: 100% !important;
+  height: 100% !important;
 }
