@@ -21,7 +21,7 @@ export default function Map() {
   // HELPERS
   // -----------------------------
   const getRouteName = (routeId) => {
-    const f = shapesRef.current?.features.find(
+    const f = shapesRef.current?.features?.find(
       (x) => String(x.properties.route_id) === String(routeId)
     );
 
@@ -34,14 +34,15 @@ export default function Map() {
   };
 
   const getStopName = (stopId) => {
-    const f = stopsRef.current?.features.find(
+    const f = stopsRef.current?.features?.find(
       (x) => String(x.properties.stop_id) === String(stopId)
     );
+
     return f?.properties?.stop_name || stopId;
   };
 
   // -----------------------------
-  // LIVE ALERTS (SORTED NEWEST FIRST)
+  // ALERTS FETCH
   // -----------------------------
   useEffect(() => {
     const fetchAlerts = () => {
@@ -50,14 +51,12 @@ export default function Map() {
         .then((data) => {
           const entities = data.entity || [];
 
-          // SORT ALERTS BY NEWEST FIRST
           const sorted = [...entities].sort((a, b) => {
             const getTime = (e) => {
               const a = e.alert;
-
               return (
                 Number(a?.timestamp) ||
-                Number(a?.active_period?.[0]?.start) ||
+                Number(a?.active_period?.?.[0]?.start) ||
                 0
               );
             };
@@ -98,7 +97,6 @@ export default function Map() {
 
           stopSeverityMap.current = severityMap;
 
-          // FORCE MAP UPDATE
           if (map.current?.getSource("stops")) {
             map.current.getSource("stops").setData(stopsRef.current);
           }
@@ -112,7 +110,7 @@ export default function Map() {
   }, []);
 
   // -----------------------------
-  // INIT MAP
+  // MAP INIT
   // -----------------------------
   useEffect(() => {
     if (map.current) return;
@@ -174,7 +172,7 @@ export default function Map() {
         },
       });
 
-      // LINE HOVER
+      // POPUPS
       const linePopup = new mapboxgl.Popup({
         closeButton: false,
         closeOnClick: false,
@@ -192,10 +190,7 @@ export default function Map() {
 
         linePopup
           .setLngLat(e.lngLat)
-          .setHTML(`
-            <strong>🚆 Route</strong><br/>
-            ${routeName}
-          `)
+          .setHTML(`<strong>🚆 Route</strong><br/>${routeName}`)
           .addTo(map.current);
       });
 
@@ -204,7 +199,6 @@ export default function Map() {
         linePopup.remove();
       });
 
-      // STOP POPUP
       map.current.on("click", "stops", (e) => {
         const props = e.features[0].properties;
 
@@ -235,10 +229,12 @@ export default function Map() {
   }, []);
 
   // -----------------------------
-  // SIDE PANEL
+  // RENDER
   // -----------------------------
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+
+      {/* Toggle button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         style={{
@@ -256,6 +252,8 @@ export default function Map() {
       >
         {isOpen ? "← close" : "open →"}
       </button>
+
+      {/* Sidebar */}
       {alerts.length > 0 && (
         <div
           style={{
@@ -270,14 +268,14 @@ export default function Map() {
             fontSize: "12px",
             width: isOpen ? "360px" : "0px",
             maxHeight: "400px",
-            overflowX: "hidden",
             overflowY: isOpen ? "auto" : "hidden",
+            overflowX: "hidden",
             transition: "all 0.3s ease",
           }}
         >
           {isOpen && (
             <>
-              <strong> 🚨 Active Alerts ({alerts.length})</strong>
+              <strong>🚨 Active Alerts ({alerts.length})</strong>
 
               {alerts.map((a, i) => {
                 const alert = a.alert;
@@ -315,9 +313,10 @@ export default function Map() {
         </div>
       )}
 
-        <div style={{ width: "100%", height: "100%", position: "absolute" }}>
-          <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
-        </div>
-
+      {/* Map */}
+      <div style={{ width: "100%", height: "100%" }}>
+        <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
       </div>
-    );
+    </div>
+  );
+}
