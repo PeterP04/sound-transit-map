@@ -15,7 +15,6 @@ export default function Header() {
   return (
     <header
       style={{
-        position: "absolute",
         top: 0,
         width: "100%",
         zIndex: 3,
