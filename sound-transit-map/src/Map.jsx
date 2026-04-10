@@ -9,6 +9,7 @@ export default function Map() {
   const map = useRef(null);
 
   const [alerts, setAlerts] = useState([]);
+  const [isOpen, setIsOpen] = useState(true);
 
   const stopAlertMap = useRef({});
   const stopSeverityMap = useRef({});
@@ -17,7 +18,7 @@ export default function Map() {
   const stopsRef = useRef(null);
 
   // -----------------------------
-  // 🔍 HELPERS
+  // HELPERS
   // -----------------------------
   const getRouteName = (routeId) => {
     const f = shapesRef.current?.features.find(
@@ -40,7 +41,7 @@ export default function Map() {
   };
 
   // -----------------------------
-  // 🚨 LIVE ALERTS (NOW SORTED NEWEST FIRST)
+  // LIVE ALERTS (SORTED NEWEST FIRST)
   // -----------------------------
   useEffect(() => {
     const fetchAlerts = () => {
@@ -49,7 +50,7 @@ export default function Map() {
         .then((data) => {
           const entities = data.entity || [];
 
-          // 🔥 SORT ALERTS BY NEWEST FIRST
+          // SORT ALERTS BY NEWEST FIRST
           const sorted = [...entities].sort((a, b) => {
             const getTime = (e) => {
               const a = e.alert;
@@ -97,7 +98,7 @@ export default function Map() {
 
           stopSeverityMap.current = severityMap;
 
-          // 🔄 FORCE MAP UPDATE
+          // FORCE MAP UPDATE
           if (map.current?.getSource("stops")) {
             map.current.getSource("stops").setData(stopsRef.current);
           }
@@ -111,7 +112,7 @@ export default function Map() {
   }, []);
 
   // -----------------------------
-  // 🗺️ INIT MAP
+  // INIT MAP
   // -----------------------------
   useEffect(() => {
     if (map.current) return;
@@ -132,7 +133,7 @@ export default function Map() {
       shapesRef.current = await shapesRes.json();
       stopsRef.current = await stopsRes.json();
 
-      // 🚆 ROUTES
+      // ROUTES
       map.current.addSource("shapes", {
         type: "geojson",
         data: shapesRef.current,
@@ -148,7 +149,7 @@ export default function Map() {
         },
       });
 
-      // 🚉 STOPS
+      // STOPS
       map.current.addSource("stops", {
         type: "geojson",
         data: stopsRef.current,
@@ -173,7 +174,7 @@ export default function Map() {
         },
       });
 
-      // 🚆 LINE HOVER
+      // LINE HOVER
       const linePopup = new mapboxgl.Popup({
         closeButton: false,
         closeOnClick: false,
@@ -203,7 +204,7 @@ export default function Map() {
         linePopup.remove();
       });
 
-      // 🚉 STOP POPUP
+      // STOP POPUP
       map.current.on("click", "stops", (e) => {
         const props = e.features[0].properties;
 
@@ -234,7 +235,7 @@ export default function Map() {
   }, []);
 
   // -----------------------------
-  // 🚨 SIDE PANEL
+  // SIDE PANEL
   // -----------------------------
   return (
     <div style={{ position: "relative" }}>
@@ -247,51 +248,74 @@ export default function Map() {
             zIndex: 1,
             background: "rgba(0,0,0,0.9)",
             color: "white",
-            padding: "12px",
+            padding: isOpen ? "12px" : "0px",
             borderRadius: "8px",
             fontSize: "12px",
-            maxWidth: "360px",
+            width: isOpen ? "360px" : "0px",
             maxHeight: "400px",
-            overflowY: "auto",
+            overflow: "hidden",
+            transition: "all 0.3s ease",
           }}
         >
-          <strong>🚨 Active Alerts ({alerts.length})</strong>
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            style={{
+              position: "absolute",
+              top: 10,
+              left: isOpen ? 370 : 10,
+              zIndex: 2,
+              padding: "6px 10px",
+              borderRadius: "6px",
+              border: "none",
+              background: "#111",
+              color: "white",
+              cursor: "pointer",
+            }}
+          >
+            {isOpen ? "←" : "→"}
+          </button>
+          {isOpen && (
+            <>
+              <strong> 🚨 Active Alerts ({alerts.length})</strong>
 
-          {alerts.map((a, i) => {
-            const alert = a.alert;
+              {alerts.map((a, i) => {
+                const alert = a.alert;
 
-            const text =
-              alert?.header_text?.translation?.[0]?.text ||
-              "No description";
+                const text =
+                  alert?.header_text?.translation?.[0]?.text ||
+                  "No description";
 
-            const routes = [
-              ...new Set(
-                alert?.informed_entity
-                  ?.map((e) => getRouteName(e.route_id))
-                  .filter(Boolean)
-              ),
-            ].join(", ");
+                const routes = [
+                  ...new Set(
+                    alert?.informed_entity
+                      ?.map((e) => getRouteName(e.route_id))
+                      .filter(Boolean)
+                  ),
+                ].join(", ");
 
-            const stops = [
-              ...new Set(
-                alert?.informed_entity
-                  ?.map((e) => getStopName(e.stop_id))
-                  .filter(Boolean)
-              ),
-            ].join(", ");
+                const stops = [
+                  ...new Set(
+                    alert?.informed_entity
+                      ?.map((e) => getStopName(e.stop_id))
+                      .filter(Boolean)
+                  ),
+                ].join(", ");
 
-            return (
-              <div key={i} style={{ marginTop: "10px" }}>
-                <div>⚠️ {text}</div>
-                <div style={{ opacity: 0.7 }}>Routes: {routes}</div>
-                <div style={{ opacity: 0.7 }}>Stops: {stops}</div>
-              </div>
-            );
-          })}
+                return (
+                  <div key={i} style={{ marginTop: "10px" }}>
+                    <div>⚠️ {text}</div>
+                    <div style={{ opacity: 0.7 }}>Routes: {routes}</div>
+                    <div style={{ opacity: 0.7 }}>Stops: {stops}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div ref={mapContainer} style={{ width: "100%", height: "100vh" }} />
         </div>
-      )}
-
-      <div ref={mapContainer} style={{ width: "100%", height: "100vh" }} />
-    </div>
-  );
-}
+      );
+    }
+  })}
+</>
+)}
