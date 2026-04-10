@@ -1,6 +1,7 @@
 import './App.css'
 import Map from "./Map";
 import Header from "./components/Header";
+import Footer from "./components/Footer";
 
 function App() {
   return (
@@ -9,6 +10,7 @@ function App() {
       <div className="mapContainer">
         <Map />
       </div>
+      <Footer />
     </div>
   );
 }
