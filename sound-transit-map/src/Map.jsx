@@ -42,7 +42,7 @@ export default function Map() {
   };
 
   // -----------------------------
-  // ALERTS FETCH
+  // FETCH ALERTS
   // -----------------------------
   useEffect(() => {
     const fetchAlerts = () => {
@@ -51,12 +51,13 @@ export default function Map() {
         .then((data) => {
           const entities = data.entity || [];
 
+          // sort newest first
           const sorted = [...entities].sort((a, b) => {
             const getTime = (e) => {
-              const a = e.alert;
+              const alert = e.alert;
               return (
-                Number(a?.timestamp) ||
-                Number(a?.active_period?.?.[0]?.start) ||
+                Number(alert?.timestamp) ||
+                Number(alert?.active_period?.[0]?.start) ||
                 0
               );
             };
@@ -71,6 +72,7 @@ export default function Map() {
 
           entities.forEach((e) => {
             const alert = e.alert;
+            if (!alert) return;
 
             const text =
               alert?.header_text?.translation?.[0]?.text ||
@@ -97,6 +99,7 @@ export default function Map() {
 
           stopSeverityMap.current = severityMap;
 
+          // update map if loaded
           if (map.current?.getSource("stops")) {
             map.current.getSource("stops").setData(stopsRef.current);
           }
@@ -110,7 +113,7 @@ export default function Map() {
   }, []);
 
   // -----------------------------
-  // MAP INIT
+  // INIT MAP
   // -----------------------------
   useEffect(() => {
     if (map.current) return;
@@ -234,7 +237,7 @@ export default function Map() {
   return (
     <div style={{ position: "relative", width: "100%", height: "100%" }}>
 
-      {/* Toggle button */}
+      {/* Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         style={{
@@ -313,7 +316,7 @@ export default function Map() {
         </div>
       )}
 
-      {/* Map */}
+      {/* MAP */}
       <div style={{ width: "100%", height: "100%" }}>
         <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
       </div>
