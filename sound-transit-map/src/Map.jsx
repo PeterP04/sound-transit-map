@@ -318,5 +318,6 @@ export default function Map() {
         <div style={{ width: "100%", height: "100%", position: "absolute" }}>
           <div ref={mapContainer} style={{ width: "100%", height: "100%" }} />
         </div>
-      );
-    }
+
+      </div>
+    );
