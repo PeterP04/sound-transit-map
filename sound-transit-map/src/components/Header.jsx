@@ -16,7 +16,7 @@ export default function Header() {
     <header
       style={{
         width: "100%",
-        zIndex: 3,
+        boxSizing: "border-box",
         background: "rgba(0,0,0,0.85)",
         color: "white",
         padding: "10px 16px",
